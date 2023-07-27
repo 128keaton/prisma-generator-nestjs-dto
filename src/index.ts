@@ -3,11 +3,14 @@ import path from 'node:path';
 import makeDir from 'make-dir';
 import { generatorHandler } from '@prisma/generator-helper';
 import { parseEnvValue } from '@prisma/sdk';
-
 import { run } from './generator';
-
 import type { GeneratorOptions } from '@prisma/generator-helper';
 import type { WriteableFileSpecs, NamingStyle } from './generator/types';
+import {
+  Options,
+  resolveConfig as resolvePrettierConfig,
+  format as formatPrettier,
+} from 'prettier';
 
 export const stringToBoolean = (input: string, defaultValue = false) => {
   if (input === 'true') {
@@ -20,7 +23,7 @@ export const stringToBoolean = (input: string, defaultValue = false) => {
   return defaultValue;
 };
 
-export const generate = (options: GeneratorOptions) => {
+export const generate = async (options: GeneratorOptions) => {
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const output = parseEnvValue(options.generator.output!);
 
@@ -32,6 +35,7 @@ export const generate = (options: GeneratorOptions) => {
     entityPrefix = '',
     entitySuffix = '',
     fileNamingStyle = 'camel',
+    prettierConfig = '',
   } = options.generator.config;
 
   const exportRelationModifierClasses = stringToBoolean(
@@ -43,6 +47,16 @@ export const generate = (options: GeneratorOptions) => {
     options.generator.config.outputToNestJsResourceStructure,
     // using `true` as default value would be a breaking change
     false,
+  );
+
+  const entitiesOnly = stringToBoolean(
+    options.generator.config.entitiesOnly,
+    false,
+  );
+
+  const usePrettier = stringToBoolean(
+    options.generator.config.usePrettier,
+    true,
   );
 
   const reExport = stringToBoolean(
@@ -68,6 +82,7 @@ export const generate = (options: GeneratorOptions) => {
     dmmf: options.dmmf,
     exportRelationModifierClasses,
     outputToNestJsResourceStructure,
+    entitiesOnly,
     connectDtoPrefix,
     createDtoPrefix,
     updateDtoPrefix,
@@ -78,6 +93,7 @@ export const generate = (options: GeneratorOptions) => {
   });
 
   const indexCollections: Record<string, WriteableFileSpecs> = {};
+  let prettierOptions: Options | null;
 
   if (reExport) {
     results.forEach(({ fileName }) => {
@@ -94,12 +110,29 @@ export const generate = (options: GeneratorOptions) => {
     });
   }
 
+  if (usePrettier) {
+    if (!!prettierConfig && prettierConfig.length > 0) {
+      prettierOptions = await resolvePrettierConfig(prettierConfig);
+    } else {
+      prettierOptions = await resolvePrettierConfig(process.cwd());
+    }
+  }
+
   return Promise.all(
     results
       .concat(Object.values(indexCollections))
       .map(async ({ fileName, content }) => {
         await makeDir(path.dirname(fileName));
-        return fs.writeFile(fileName, content);
+
+        let formattedContent = content;
+        if (usePrettier) {
+          formattedContent = formatPrettier(content, {
+            filepath: fileName,
+            ...prettierOptions,
+          });
+        }
+
+        return fs.writeFile(fileName, formattedContent);
       }),
   );
 };

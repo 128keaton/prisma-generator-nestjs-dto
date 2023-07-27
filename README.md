@@ -28,7 +28,7 @@ These classes can also be used with the built-in [ValidationPipe](https://docs.n
 ## <a name="usage"></a>Usage?
 
 ```sh
-npm install --save-dev @vegardit/prisma-generator-nestjs-dto
+npm install --save-dev @vipstorage/prisma-generator-nestjs-dto
 ```
 
 ```prisma
@@ -38,12 +38,15 @@ generator nestjsDto {
   outputToNestJsResourceStructure = "false"
   exportRelationModifierClasses   = "true"
   reExport                        = "false"
+  entitiesOnly                    = "false"
   createDtoPrefix                 = "Create"
   updateDtoPrefix                 = "Update"
   dtoSuffix                       = "Dto"
   entityPrefix                    = ""
   entitySuffix                    = ""
   fileNamingStyle                 = "camel"
+  usePrettier                     = "true"
+  prettierConfig                  = ""
 }
 ```
 
@@ -55,12 +58,15 @@ All parameters are optional.
 - [`outputToNestJsResourceStructure`]: (default: `"false"`) - writes `dto`s and `entities` to subfolders aligned with [NestJS CRUD generator](https://docs.nestjs.com/recipes/crud-generator). Resource module name is derived from lower-cased model name in `schema.prisma`
 - [`exportRelationModifierClasses`]: (default: `"true"`) - Should extra classes generated for relationship field operations on DTOs be exported?
 - [`reExport`]: (default: `false`) - Should an index.ts be created for every folder?
+- [`entitiesOnly`]: (default: `false`) - Should only `.entity.ts` files be created?
 - [`createDtoPrefix`]: (default: `"Create"`) - phrase to prefix every `CreateDTO` class with
 - [`updateDtoPrefix`]: (default: `"Update"`) - phrase to prefix every `UpdateDTO` class with
 - [`dtoSuffix`]: (default: `"Dto"`) - phrase to suffix every `CreateDTO` and `UpdateDTO` class with
 - [`entityPrefix`]: (default: `""`) - phrase to prefix every `Entity` class with
 - [`entitySuffix`]: (default: `""`) - phrase to suffix every `Entity` class with
 - [`fileNamingStyle`]: (default: `"camel"`) - how to name generated files. Valid choices are `"camel"`, `"pascal"`, `"kebab"` and `"snake"`.
+- [`usePrettier`]: (default: `true`) - Use prettier to format the generated files?
+- [`prettierConfig`]: (default: `"""`) - Path to prettier config file
 
 ## <a name="annotations"></a>Annotations
 
@@ -286,4 +292,4 @@ Relation and [relation scalar](https://www.prisma.io/docs/concepts/components/pr
 
 ## <a name="license"></a>License
 
-All files are released under the [Apache License 2.0](https://github.com/vegardit/prisma-generator-nestjs-dto/blob/master/LICENSE).
+All files are released under the [Apache License 2.0](https://github.com/128keaton/prisma-generator-nestjs-dto/blob/master/LICENSE).

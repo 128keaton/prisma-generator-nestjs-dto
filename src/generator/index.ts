@@ -18,6 +18,7 @@ interface RunParam {
   dmmf: DMMF.Document;
   exportRelationModifierClasses: boolean;
   outputToNestJsResourceStructure: boolean;
+  entitiesOnly: boolean;
   connectDtoPrefix: string;
   createDtoPrefix: string;
   updateDtoPrefix: string;
@@ -35,6 +36,7 @@ export const run = ({
   const {
     exportRelationModifierClasses,
     outputToNestJsResourceStructure,
+    entitiesOnly,
     fileNamingStyle = 'camel',
     ...preAndSuffixes
   } = options;
@@ -132,6 +134,8 @@ export const run = ({
       }),
     };
     // TODO generate model.struct.ts
+
+    if (entitiesOnly) return [entity];
 
     return [connectDto, createDto, updateDto, entity];
   });
