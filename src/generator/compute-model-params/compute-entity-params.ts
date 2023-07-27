@@ -101,7 +101,7 @@ export const computeEntityParams = ({
           )}${path.sep}${templateHelpers.entityFilename(field.type)}`,
         );
 
-        overrides.apiPropertyAnnotation.type = field.type;
+        overrides.apiPropertyAnnotation.type = importName;
         overrides.apiPropertyAnnotation.isArray = field.isList;
         fieldHasApiProperty = true;
 

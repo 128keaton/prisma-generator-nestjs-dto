@@ -145,16 +145,14 @@ export const makeHelpers = ({
     fileName(name, undefined, '.enum', withExtension);
 
   const fieldType = (field: ParsedField, toInputType = false) => {
-
-
-// relationName:
+    // relationName:
     return `${
       field.kind === 'scalar'
         ? scalarToTS(field.type, toInputType)
         : field.kind === 'enum' || field.kind === 'relation-input'
-          ? field.type
-          : entityName(field.type)
-    }${when(field.isList, '[]')}`
+        ? field.type
+        : entityName(field.type)
+    }${when(field.isList, '[]')}`;
   };
 
   const apiProperty = (props?: {
@@ -182,7 +180,7 @@ export const makeHelpers = ({
           newProps.default = `"${props.defaultValue.args[0]}"`;
         }
       } else {
-        newProps.default = `'${props.defaultValue}'`;
+        newProps.default = `"${props.defaultValue}"`;
       }
     }
 
@@ -198,16 +196,15 @@ export const makeHelpers = ({
     useInputTypes = false,
     forceOptional = false,
   ) => {
-
     console.log('fieldToDtoProp', field);
-    return  `${when(
+    return `${when(
       field.kind === 'enum',
       `@ApiProperty({ enum: ${fieldType(field, useInputTypes)}})\n`,
     )}${field.name}${unless(
       field.isRequired && !forceOptional,
       '?',
     )}: ${fieldType(field, useInputTypes)};`;
-  }
+  };
 
   const fieldsToDtoProps = (
     fields: ParsedField[],
@@ -262,7 +259,7 @@ export const makeHelpers = ({
       entityPrefix,
       entitySuffix,
       enumPrefix,
-      enumSuffix
+      enumSuffix,
     },
     apiExtraModels,
     entityName,
