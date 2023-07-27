@@ -179,7 +179,7 @@ export const makeHelpers = ({
         if (props.defaultValue.name === 'now') {
           newProps.default = `'${new Date().toDateString()}'`;
         } else if (props.defaultValue.name === 'dbgenerated') {
-          newProps.default = `'${props.defaultValue.args[0]}'`;
+          newProps.default = `"${props.defaultValue.args[0]}"`;
         }
       } else {
         newProps.default = `'${props.defaultValue}'`;
