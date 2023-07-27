@@ -1,7 +1,17 @@
 import path from 'node:path';
 import slash from 'slash';
-import { DTO_ENTITY_HIDDEN, DTO_RELATION_REQUIRED } from '../annotations';
-import { isAnnotatedWith, isRelation, isRequired } from '../field-classifiers';
+import {
+  DEFAULT_VALUE,
+  DTO_ENTITY_HIDDEN,
+  DTO_RELATION_REQUIRED,
+} from '../annotations';
+import {
+  getAnnotationValue,
+  isAnnotatedWith,
+  isEnum,
+  isRelation,
+  isRequired,
+} from '../field-classifiers';
 import {
   getRelationScalars,
   getRelativePath,
@@ -16,17 +26,20 @@ import type {
   EntityParams,
   ImportStatementParams,
   ParsedField,
+  Enum,
 } from '../types';
 import type { TemplateHelpers } from '../template-helpers';
 
 interface ComputeEntityParamsParam {
   model: Model;
   allModels: Model[];
+  allEnums: Enum[];
   templateHelpers: TemplateHelpers;
 }
 export const computeEntityParams = ({
   model,
   allModels,
+  allEnums,
   templateHelpers,
 }: ComputeEntityParamsParam): EntityParams => {
   const imports: ImportStatementParams[] = [];
@@ -35,14 +48,28 @@ export const computeEntityParams = ({
   const relationScalarFields = getRelationScalars(model.fields);
   const relationScalarFieldNames = Object.keys(relationScalarFields);
 
+  let fieldHasApiProperty = false;
+
   const fields = model.fields.reduce((result, field) => {
     const { name } = field;
+    const apiPropertyAnnotation: { [key: string]: string } = {};
+
     const overrides: Partial<DMMF.Field> = {
       isRequired: true,
       isNullable: !field.isRequired,
+      apiPropertyAnnotation,
     };
 
     if (isAnnotatedWith(field, DTO_ENTITY_HIDDEN)) return result;
+
+    const defaultValue =
+      getAnnotationValue(field, DEFAULT_VALUE) || field.default;
+
+    if (!!defaultValue) {
+      fieldHasApiProperty = true;
+      overrides.apiPropertyAnnotation.defaultValue = defaultValue;
+      overrides.apiPropertyAnnotation.isArray = field.isList;
+    }
 
     // relation fields are never required in an entity.
     // they can however be `selected` and thus might optionally be present in the
@@ -73,6 +100,10 @@ export const computeEntityParams = ({
             modelToImportFrom.output.entity,
           )}${path.sep}${templateHelpers.entityFilename(field.type)}`,
         );
+
+        overrides.apiPropertyAnnotation.type = field.type;
+        overrides.apiPropertyAnnotation.isArray = field.isList;
+        fieldHasApiProperty = true;
 
         // don't double-import the same thing
         // TODO should check for match on any import name ( - no matter where from)
@@ -110,11 +141,58 @@ export const computeEntityParams = ({
       overrides.isNullable = !isAnyRelationRequired;
     }
 
+    if (isEnum(field) && field.type !== model.name) {
+      const enumToImportFrom = allEnums.find(({ name }) => name === field.type);
+
+      if (!enumToImportFrom)
+        throw new Error(
+          `related enum '${field.type}' for '${model.name}.${field.name}' not found`,
+        );
+
+      let enumValues: string[] | undefined = enumToImportFrom.values.map(
+        (enumValue) => enumValue.dbName || enumValue.name,
+      );
+
+      if (!enumValues.length) enumValues = undefined;
+
+      overrides.apiPropertyAnnotation.enumValues = enumValues;
+      overrides.apiPropertyAnnotation.type =
+        enumToImportFrom.dbName || enumToImportFrom.name;
+      fieldHasApiProperty = true;
+
+      const importName = templateHelpers.enumName(field.type);
+      const importFrom = slash(
+        `${getRelativePath(model.output.entity, enumToImportFrom.output.enum)}${
+          path.sep
+        }${templateHelpers.enumFilename(field.type)}`,
+      );
+
+      if (
+        !imports.some(
+          (item) =>
+            Array.isArray(item.destruct) &&
+            item.destruct.includes(importName) &&
+            item.from === importFrom,
+        )
+      ) {
+        imports.push({
+          destruct: [importName],
+          from: importFrom,
+        });
+      }
+    }
+
+    if (!fieldHasApiProperty) delete overrides.apiPropertyAnnotation;
+
     return [...result, mapDMMFToParsedField(field, overrides)];
   }, [] as ParsedField[]);
 
-  if (apiExtraModels.length)
-    imports.unshift({ from: '@nestjs/swagger', destruct: ['ApiExtraModels'] });
+  if (apiExtraModels.length || fieldHasApiProperty) {
+    const destruct = [];
+    if (apiExtraModels.length) destruct.push('ApiExtraModels');
+    if (fieldHasApiProperty) destruct.push('ApiProperty');
+    imports.unshift({ from: '@nestjs/swagger', destruct });
+  }
 
   const importPrismaClient = makeImportsFromPrismaClient(fields);
   if (importPrismaClient) imports.unshift(importPrismaClient);

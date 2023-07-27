@@ -28,14 +28,16 @@ export const generate = async (options: GeneratorOptions) => {
   const output = parseEnvValue(options.generator.output!);
 
   const {
+    prettierConfig = '',
     connectDtoPrefix = 'Connect',
     createDtoPrefix = 'Create',
     updateDtoPrefix = 'Update',
     dtoSuffix = 'Dto',
     entityPrefix = '',
     entitySuffix = '',
+    enumPrefix = '',
+    enumSuffix = '',
     fileNamingStyle = 'camel',
-    prettierConfig = '',
   } = options.generator.config;
 
   const exportRelationModifierClasses = stringToBoolean(
@@ -89,6 +91,8 @@ export const generate = async (options: GeneratorOptions) => {
     dtoSuffix,
     entityPrefix,
     entitySuffix,
+    enumPrefix,
+    enumSuffix,
     fileNamingStyle,
   });
 

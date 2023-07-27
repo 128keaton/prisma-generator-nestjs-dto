@@ -11,7 +11,8 @@ import { DTO_IGNORE_MODEL } from './annotations';
 import { isAnnotatedWith } from './field-classifiers';
 
 import type { DMMF } from '@prisma/generator-helper';
-import { NamingStyle, Model, WriteableFileSpecs } from './types';
+import { NamingStyle, Model, WriteableFileSpecs, Enum } from './types';
+import { generateEnum } from './generate-enum';
 
 interface RunParam {
   output: string;
@@ -25,6 +26,8 @@ interface RunParam {
   dtoSuffix: string;
   entityPrefix: string;
   entitySuffix: string;
+  enumPrefix: string;
+  enumSuffix: string;
   fileNamingStyle: NamingStyle;
 }
 
@@ -73,12 +76,43 @@ export const run = ({
       },
     }));
 
+  const allEnums = dmmf.datamodel.enums;
+  const filteredEnums: Enum[] = allEnums.map((enumeration) => {
+    return {
+      ...enumeration,
+      output: {
+        enum: outputToNestJsResourceStructure
+          ? path.join(output, transformFileNameCase(enumeration.name), 'enums')
+          : output,
+      },
+    };
+  });
+
+  const enumFiles = filteredEnums.map((enumeration) => {
+    logger.info(`Processing Enum ${enumeration.name}`);
+
+    // generate enumName.enum.ts
+    const mappedEnum = {
+      fileName: path.join(
+        enumeration.output.enum,
+        templateHelpers.enumFilename(enumeration.name, true),
+      ),
+      content: generateEnum({
+        name: enumeration.name,
+        values: templateHelpers.enumValuesToEnumProps(enumeration.values),
+      }),
+    };
+
+    return [mappedEnum];
+  });
+
   const modelFiles = filteredModels.map((model) => {
     logger.info(`Processing Model ${model.name}`);
 
     const modelParams = computeModelParams({
       model,
       allModels: filteredModels,
+      allEnums: filteredEnums,
       templateHelpers,
     });
 
@@ -140,5 +174,5 @@ export const run = ({
     return [connectDto, createDto, updateDto, entity];
   });
 
-  return [...modelFiles].flat();
+  return [...modelFiles, ...enumFiles].flat();
 };

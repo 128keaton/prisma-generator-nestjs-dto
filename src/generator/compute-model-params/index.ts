@@ -9,25 +9,29 @@ import type { Model, ModelParams } from '../types';
 interface ComputeModelParamsParam {
   model: Model;
   allModels: Model[];
+  allEnums: any[];
   templateHelpers: TemplateHelpers;
 }
 export const computeModelParams = ({
   model,
   allModels,
+  allEnums,
   templateHelpers,
 }: ComputeModelParamsParam): ModelParams => ({
   // TODO find out if model needs `ConnectDTO`
   connect: computeConnectDtoParams({ model }),
   create: computeCreateDtoParams({
     model,
-    allModels, // ? should this be `allModels: models` instead
+    allModels,
+    allEnums,
     templateHelpers,
   }),
 
   update: computeUpdateDtoParams({
     model,
     allModels,
+    allEnums,
     templateHelpers,
   }),
-  entity: computeEntityParams({ model, allModels, templateHelpers }),
+  entity: computeEntityParams({ model, allModels, allEnums, templateHelpers }),
 });

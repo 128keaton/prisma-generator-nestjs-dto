@@ -13,8 +13,13 @@ generator nestjsDto {
   updateDtoPrefix                 = "Update"
   dtoSuffix                       = "Dto"
   entityPrefix                    = ""
-  entitySuffix                    = ""
-  fileNamingStyle                 = "camel"
+  entitySuffix                    = "Entity"
+  fileNamingStyle                 = "kebab"
+}
+
+enum ProductType {
+  BULK
+  INDIVIDUAL
 }
 
 model Product {
@@ -28,6 +33,8 @@ model Product {
   score       Float?
   categoryId  String   @db.Uuid
   companyId   String   @db.Uuid
+
+  type ProductType @default(BULK)
 
   /// @DtoRelationRequired
   /// @DtoRelationCanConnectOnCreate

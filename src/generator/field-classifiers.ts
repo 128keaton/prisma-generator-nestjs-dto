@@ -1,5 +1,6 @@
 import { DTO_READ_ONLY } from './annotations';
 import type { DMMF } from '@prisma/generator-helper';
+import { ParsedField } from "./types";
 
 export const isAnnotatedWith = (
   instance: DMMF.Field | DMMF.Model,
@@ -15,6 +16,27 @@ export const isAnnotatedWithOneOf = (
 ): boolean =>
   annotations.some((annotation) => isAnnotatedWith(instance, annotation));
 
+export const getAnnotationValue = (
+  instance: DMMF.Field | DMMF.Model,
+  annotation: RegExp,
+): string | null => {
+  if (!isAnnotatedWith(instance, annotation) || !instance.documentation)
+    return null;
+
+  const documentation = instance.documentation.split('\n');
+
+  if (documentation.length === 0) return null;
+
+  const annotationMatch = documentation.find((line) => annotation.test(line));
+
+  if (!annotationMatch) return null;
+
+  const annotationValue = annotationMatch.match(/"(.*?)"/);
+
+  if (!annotationValue) return null;
+
+  return annotationValue[0].replaceAll(`"`, ``);
+};
 // Field properties
 // isGenerated, !meaning unknown - assuming this means that the field itself is generated, not the value
 // isId,
@@ -59,6 +81,11 @@ export const isRelation = (field: DMMF.Field): boolean => {
   const { kind /*, relationName */ } = field;
   // indicates a `relation` field
   return kind === 'object' /* && relationName */;
+};
+
+export const isEnum = (field: DMMF.Field | ParsedField): boolean => {
+  const { kind } = field;
+  return kind === 'enum';
 };
 
 export const isIdWithDefaultValue = (field: DMMF.Field): boolean =>

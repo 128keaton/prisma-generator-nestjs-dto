@@ -6,11 +6,11 @@ import {
   isRelation,
   isUnique,
 } from './field-classifiers';
+import type { TemplateHelpers } from './template-helpers';
 import { scalarToTS } from './template-helpers';
 
 import type { DMMF } from '@prisma/generator-helper';
-import type { TemplateHelpers } from './template-helpers';
-import type { ImportStatementParams, Model, ParsedField } from './types';
+import type { Enum, ImportStatementParams, Model, ParsedField } from './types';
 
 export const uniq = <T = any>(input: T[]): T[] => Array.from(new Set(input));
 export const concatIntoArray = <T = any>(source: T[], target: T[]) =>
@@ -19,20 +19,17 @@ export const concatIntoArray = <T = any>(source: T[], target: T[]) =>
 export const makeImportsFromPrismaClient = (
   fields: ParsedField[],
 ): ImportStatementParams | null => {
-  const enumsToImport = uniq(
-    fields.filter(({ kind }) => kind === 'enum').map(({ type }) => type),
-  );
   const importPrisma = fields
     .filter(({ kind }) => kind === 'scalar')
     .some(({ type }) => scalarToTS(type).includes('Prisma'));
 
-  if (!(enumsToImport.length || importPrisma)) {
+  if (!importPrisma) {
     return null;
   }
 
   return {
     from: '@prisma/client',
-    destruct: importPrisma ? ['Prisma', ...enumsToImport] : enumsToImport,
+    destruct: ['Prisma'],
   };
 };
 
@@ -117,18 +114,76 @@ export const getRelationConnectInputFields = ({
     isUnique(relatedModelField),
   );
 
-  const foreignFields = new Set<DMMF.Field>([
+  return new Set<DMMF.Field>([
     ...foreignKeyFields,
     ...idFields,
     ...uniqueFields,
   ]);
-
-  return foreignFields;
 };
 
 export const getRelativePath = (from: string, to: string) => {
   const result = slash(path.relative(from, to));
   return result || '.';
+};
+
+interface GenerateEnumPropertiesParam {
+  field: DMMF.Field;
+  model: Model;
+  allEnums: Enum[];
+  templateHelpers: TemplateHelpers;
+  overrides: { [key: string]: any };
+}
+export const generateEnumProperties = ({
+  allEnums,
+  field,
+  model,
+  overrides,
+  templateHelpers,
+}: GenerateEnumPropertiesParam) => {
+  const imports: ImportStatementParams[] = [];
+
+  const enumToImportFrom = allEnums.find(({ name }) => name === field.type);
+
+  if (!enumToImportFrom)
+    throw new Error(
+      `related enum '${field.type}' for '${model.name}.${field.name}' not found`,
+    );
+
+  let enumValues: string[] | undefined = enumToImportFrom.values.map(
+    (enumValue) => enumValue.dbName || enumValue.name,
+  );
+
+  if (!!enumValues && !enumValues.length) enumValues = undefined;
+
+  overrides.apiPropertyAnnotation.enumValues = enumValues;
+  overrides.apiPropertyAnnotation.type =
+    enumToImportFrom.dbName || enumToImportFrom.name;
+
+  const importName = templateHelpers.enumName(field.type);
+  const importFrom = slash(
+    `${getRelativePath(model.output.entity, enumToImportFrom.output.enum)}${
+      path.sep
+    }${templateHelpers.enumFilename(field.type)}`,
+  );
+
+  if (
+    !imports.some(
+      (item) =>
+        Array.isArray(item.destruct) &&
+        item.destruct.includes(importName) &&
+        item.from === importFrom,
+    )
+  ) {
+    imports.push({
+      destruct: [importName],
+      from: importFrom,
+    });
+  }
+
+  return {
+    overrides,
+    imports,
+  };
 };
 
 interface GenerateRelationInputParam {
@@ -159,6 +214,7 @@ export const generateRelationInput = ({
 
   if (isAnnotatedWith(field, canCreateAnnotation)) {
     const preAndPostfixedName = t.createDtoName(field.type);
+
     apiExtraModels.push(preAndPostfixedName);
 
     const modelToImportFrom = allModels.find(({ name }) => name === field.type);
@@ -185,6 +241,7 @@ export const generateRelationInput = ({
 
   if (isAnnotatedWith(field, canConnectAnnotation)) {
     const preAndPostfixedName = t.connectDtoName(field.type);
+
     apiExtraModels.push(preAndPostfixedName);
     const modelToImportFrom = allModels.find(({ name }) => name === field.type);
 

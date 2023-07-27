@@ -1,4 +1,7 @@
 import { ImportStatementParams, ParsedField } from './types';
+import { DMMF } from '@prisma/generator-helper';
+import EnumValue = DMMF.EnumValue;
+import { isEnum } from './field-classifiers';
 
 const PrismaScalarToTypeScript: Record<string, string> = {
   String: 'string',
@@ -86,6 +89,8 @@ interface MakeHelpersParam {
   dtoSuffix: string;
   entityPrefix: string;
   entitySuffix: string;
+  enumPrefix: string;
+  enumSuffix: string;
   transformClassNameCase?: (item: string) => string;
   transformFileNameCase?: (item: string) => string;
 }
@@ -96,6 +101,8 @@ export const makeHelpers = ({
   dtoSuffix,
   entityPrefix,
   entitySuffix,
+  enumPrefix,
+  enumSuffix,
   transformClassNameCase = echo,
   transformFileNameCase = echo,
 }: MakeHelpersParam) => {
@@ -114,6 +121,7 @@ export const makeHelpers = ({
 
   const entityName = (name: string) =>
     className(name, entityPrefix, entitySuffix);
+  const enumName = (name: string) => className(name, enumPrefix, enumSuffix);
   const connectDtoName = (name: string) =>
     className(name, connectDtoPrefix, dtoSuffix);
   const createDtoName = (name: string) =>
@@ -133,27 +141,73 @@ export const makeHelpers = ({
   const entityFilename = (name: string, withExtension = false) =>
     fileName(name, undefined, '.entity', withExtension);
 
-  const fieldType = (field: ParsedField, toInputType = false) =>
-    `${
+  const enumFilename = (name: string, withExtension = false) =>
+    fileName(name, undefined, '.enum', withExtension);
+
+  const fieldType = (field: ParsedField, toInputType = false) => {
+
+
+// relationName:
+    return `${
       field.kind === 'scalar'
         ? scalarToTS(field.type, toInputType)
         : field.kind === 'enum' || field.kind === 'relation-input'
-        ? field.type
-        : entityName(field.type)
-    }${when(field.isList, '[]')}`;
+          ? field.type
+          : entityName(field.type)
+    }${when(field.isList, '[]')}`
+  };
+
+  const apiProperty = (props?: {
+    defaultValue?: string | { name: string; args: string[] };
+    enumValues?: string[];
+    type?: string;
+    isArray?: boolean;
+  }) => {
+    if (!props) return '';
+    if (!props.defaultValue && !props.enumValues && !props.type) return '';
+
+    const newProps: { [key: string]: string | boolean } = {};
+
+    if (!!props.type) newProps.type = props.type;
+
+    if (!!props.isArray) newProps.isArray = props.isArray as boolean;
+
+    if (!!props.enumValues) newProps.enum = JSON.stringify(props.enumValues);
+
+    if (!!props.defaultValue) {
+      if (typeof props.defaultValue === 'object') {
+        if (props.defaultValue.name === 'now') {
+          newProps.default = `'${new Date().toDateString()}'`;
+        } else if (props.defaultValue.name === 'dbgenerated') {
+          newProps.default = `'${props.defaultValue.args[0]}'`;
+        }
+      } else {
+        newProps.default = `'${props.defaultValue}'`;
+      }
+    }
+
+    const propKeys = Object.keys(newProps);
+    const propValue = (key: string) => newProps[key];
+    const propFormat = (key: string) => ` ${key}: ${propValue(key)}`;
+
+    return `\n@ApiProperty({ ${propKeys.map(propFormat).join(',')} })\n`;
+  };
 
   const fieldToDtoProp = (
     field: ParsedField,
     useInputTypes = false,
     forceOptional = false,
-  ) =>
-    `${when(
+  ) => {
+
+    console.log('fieldToDtoProp', field);
+    return  `${when(
       field.kind === 'enum',
       `@ApiProperty({ enum: ${fieldType(field, useInputTypes)}})\n`,
     )}${field.name}${unless(
       field.isRequired && !forceOptional,
       '?',
     )}: ${fieldType(field, useInputTypes)};`;
+  }
 
   const fieldsToDtoProps = (
     fields: ParsedField[],
@@ -167,13 +221,34 @@ export const makeHelpers = ({
     )}`;
 
   const fieldToEntityProp = (field: ParsedField) =>
-    `${field.name}${unless(field.isRequired, '?')}: ${fieldType(field)} ${when(
-      field.isNullable,
-      ' | null',
-    )};`;
+    `${when(
+      field.hasOwnProperty('apiPropertyAnnotation'),
+      apiProperty(field.apiPropertyAnnotation),
+    )}
+    ${field.name}
+    ${unless(field.isRequired, '?')}: ${fieldType(field)} 
+    ${when(field.isNullable, ' | null')}
+    ${when(
+      isEnum(field) && !!field.default,
+      ` = ${fieldType(field)}.${field.default}`,
+    )}
+    ;`;
 
   const fieldsToEntityProps = (fields: ParsedField[]) =>
     `${each(fields, (field) => fieldToEntityProp(field), '\n')}`;
+
+  const enumValueToProp = (value: EnumValue) => {
+    const nameValue = !!value.dbName ? value.dbName : value.name;
+
+    if (isNaN(Number(nameValue))) {
+      return `${nameValue} = '${nameValue}'`;
+    }
+
+    return `${nameValue} = ${nameValue}`;
+  };
+
+  const enumValuesToEnumProps = (values: EnumValue[]) =>
+    `${each(values, (value) => enumValueToProp(value), ',\n')}`;
 
   const apiExtraModels = (names: string[]) =>
     `@ApiExtraModels(${names.map(entityName)})`;
@@ -186,9 +261,12 @@ export const makeHelpers = ({
       dtoSuffix,
       entityPrefix,
       entitySuffix,
+      enumPrefix,
+      enumSuffix
     },
     apiExtraModels,
     entityName,
+    enumName,
     connectDtoName,
     createDtoName,
     updateDtoName,
@@ -196,12 +274,14 @@ export const makeHelpers = ({
     createDtoFilename,
     updateDtoFilename,
     entityFilename,
+    enumFilename,
     each,
     echo,
     fieldsToDtoProps,
     fieldToDtoProp,
     fieldToEntityProp,
     fieldsToEntityProps,
+    enumValuesToEnumProps,
     fieldType,
     for: each,
     if: when,

@@ -1,12 +1,15 @@
 import {
+  DEFAULT_VALUE,
   DTO_RELATION_CAN_CONNECT_ON_UPDATE,
   DTO_RELATION_CAN_CRAEATE_ON_UPDATE,
   DTO_RELATION_MODIFIERS_ON_UPDATE,
   DTO_UPDATE_OPTIONAL,
 } from '../annotations';
 import {
+  getAnnotationValue,
   isAnnotatedWith,
   isAnnotatedWithOneOf,
+  isEnum,
   isId,
   isReadOnly,
   isRelation,
@@ -15,6 +18,7 @@ import {
 } from '../field-classifiers';
 import {
   concatIntoArray,
+  generateEnumProperties,
   generateRelationInput,
   getRelationScalars,
   makeImportsFromPrismaClient,
@@ -29,19 +33,22 @@ import type {
   UpdateDtoParams,
   ImportStatementParams,
   ParsedField,
+  Enum,
 } from '../types';
 
 interface ComputeUpdateDtoParamsParam {
   model: Model;
   allModels: Model[];
+  allEnums: Enum[];
   templateHelpers: TemplateHelpers;
 }
 export const computeUpdateDtoParams = ({
   model,
   allModels,
+  allEnums,
   templateHelpers,
 }: ComputeUpdateDtoParamsParam): UpdateDtoParams => {
-  let hasEnum = false;
+  let hasApiProperty = false;
   const imports: ImportStatementParams[] = [];
   const extraClasses: string[] = [];
   const apiExtraModels: string[] = [];
@@ -51,7 +58,20 @@ export const computeUpdateDtoParams = ({
 
   const fields = model.fields.reduce((result, field) => {
     const { name } = field;
-    const overrides: Partial<DMMF.Field> = { isRequired: false };
+    const apiPropertyAnnotation: { [key: string]: string } = {};
+    const overrides: Partial<DMMF.Field> = {
+      isRequired: false,
+      apiPropertyAnnotation,
+    };
+
+    const defaultValue =
+      getAnnotationValue(field, DEFAULT_VALUE) || field.default;
+
+    if (!!defaultValue) {
+      hasApiProperty = true;
+      overrides.apiPropertyAnnotation.defaultValue = defaultValue;
+      overrides.apiPropertyAnnotation.isArray = field.isList;
+    }
 
     if (isReadOnly(field)) return result;
     if (isRelation(field)) {
@@ -70,6 +90,12 @@ export const computeUpdateDtoParams = ({
 
       overrides.type = relationInputType.type;
       overrides.isList = false;
+      (overrides as any).kind = 'relation-input'
+
+      overrides.type = relationInputType.type;
+      overrides.apiPropertyAnnotation.type = relationInputType.type;
+
+      hasApiProperty = true;
 
       concatIntoArray(relationInputType.imports, imports);
       concatIntoArray(relationInputType.generatedClasses, extraClasses);
@@ -88,15 +114,26 @@ export const computeUpdateDtoParams = ({
       if (isRequiredWithDefaultValue(field)) return result;
     }
 
-    if (field.kind === 'enum') hasEnum = true;
+    if (isEnum(field)) {
+      const enumProperties = generateEnumProperties({
+        allEnums,
+        field,
+        model,
+        overrides,
+        templateHelpers,
+      });
+
+      concatIntoArray(enumProperties.imports, imports);
+      hasApiProperty = true;
+    }
 
     return [...result, mapDMMFToParsedField(field, overrides)];
   }, [] as ParsedField[]);
 
-  if (apiExtraModels.length || hasEnum) {
+  if (apiExtraModels.length || hasApiProperty) {
     const destruct = [];
     if (apiExtraModels.length) destruct.push('ApiExtraModels');
-    if (hasEnum) destruct.push('ApiProperty');
+    if (hasApiProperty) destruct.push('ApiProperty');
     imports.unshift({ from: '@nestjs/swagger', destruct });
   }
 

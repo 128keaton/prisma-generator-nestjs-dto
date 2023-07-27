@@ -7,6 +7,12 @@ export interface Model extends DMMF.Model {
   };
 }
 
+export interface Enum extends DMMF.DatamodelEnum {
+  output: {
+    enum: string;
+  };
+}
+
 export interface ParsedField {
   kind: DMMF.FieldKind | 'relation-input';
   name: string;
@@ -20,6 +26,18 @@ export interface ParsedField {
    * **must not be `true` when `isRequired` is `true`**
    */
   isNullable?: boolean;
+  apiPropertyAnnotation?: {
+    defaultValue?: string | { name: string; args: string[] };
+    enumValues?: string[];
+  };
+  default?:
+    | {
+        name: string;
+        args: any[];
+      }
+    | string
+    | boolean
+    | number;
 }
 
 export interface ExtraModel {

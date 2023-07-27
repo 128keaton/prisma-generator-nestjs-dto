@@ -1,13 +1,16 @@
 import {
+  DEFAULT_VALUE,
   DTO_CREATE_OPTIONAL,
   DTO_RELATION_CAN_CONNECT_ON_CREATE,
-  DTO_RELATION_CAN_CRAEATE_ON_CREATE,
+  DTO_RELATION_CAN_CREATE_ON_CREATE,
   DTO_RELATION_MODIFIERS_ON_CREATE,
   DTO_RELATION_REQUIRED,
 } from '../annotations';
 import {
+  getAnnotationValue,
   isAnnotatedWith,
   isAnnotatedWithOneOf,
+  isEnum,
   isIdWithDefaultValue,
   isReadOnly,
   isRelation,
@@ -16,6 +19,7 @@ import {
 } from '../field-classifiers';
 import {
   concatIntoArray,
+  generateEnumProperties,
   generateRelationInput,
   getRelationScalars,
   makeImportsFromPrismaClient,
@@ -30,19 +34,22 @@ import type {
   CreateDtoParams,
   ImportStatementParams,
   ParsedField,
+  Enum,
 } from '../types';
 
 interface ComputeCreateDtoParamsParam {
   model: Model;
   allModels: Model[];
+  allEnums: Enum[];
   templateHelpers: TemplateHelpers;
 }
 export const computeCreateDtoParams = ({
   model,
   allModels,
+  allEnums,
   templateHelpers,
 }: ComputeCreateDtoParamsParam): CreateDtoParams => {
-  let hasEnum = false;
+  let hasApiProperty = false;
   const imports: ImportStatementParams[] = [];
   const apiExtraModels: string[] = [];
   const extraClasses: string[] = [];
@@ -52,22 +59,36 @@ export const computeCreateDtoParams = ({
 
   const fields = model.fields.reduce((result, field) => {
     const { name } = field;
-    const overrides: Partial<DMMF.Field> = {};
+    const apiPropertyAnnotation: { [key: string]: string } = {};
+    const overrides: Partial<DMMF.Field> = {
+      apiPropertyAnnotation,
+    };
+
+    const defaultValue = getAnnotationValue(field, DEFAULT_VALUE);
+
+    if (!!defaultValue) {
+      hasApiProperty = true;
+      overrides.apiPropertyAnnotation.defaultValue = defaultValue;
+      overrides.apiPropertyAnnotation.isArray = field.isList;
+    }
 
     if (isReadOnly(field)) return result;
     if (isRelation(field)) {
       if (!isAnnotatedWithOneOf(field, DTO_RELATION_MODIFIERS_ON_CREATE)) {
         return result;
       }
+
+
       const relationInputType = generateRelationInput({
         field,
         model,
         allModels,
         templateHelpers,
         preAndSuffixClassName: templateHelpers.createDtoName,
-        canCreateAnnotation: DTO_RELATION_CAN_CRAEATE_ON_CREATE,
+        canCreateAnnotation: DTO_RELATION_CAN_CREATE_ON_CREATE,
         canConnectAnnotation: DTO_RELATION_CAN_CONNECT_ON_CREATE,
       });
+
 
       const isDtoRelationRequired = isAnnotatedWith(
         field,
@@ -80,6 +101,9 @@ export const computeCreateDtoParams = ({
       if (field.isList) overrides.isRequired = false;
 
       overrides.type = relationInputType.type;
+      (overrides as any).kind = 'relation-input'
+
+
       // since relation input field types are translated to something like { connect: Foo[] }, the field type itself is not a list anymore.
       // You provide list input in the nested `connect` or `create` properties.
       overrides.isList = false;
@@ -103,21 +127,33 @@ export const computeCreateDtoParams = ({
       overrides.isRequired = false;
     }
 
-    if (field.kind === 'enum') hasEnum = true;
+    if (isEnum(field)) {
+      const enumProperties = generateEnumProperties({
+        allEnums,
+        field,
+        model,
+        overrides,
+        templateHelpers,
+      });
+
+      concatIntoArray(enumProperties.imports, imports);
+      hasApiProperty = true;
+    }
 
     return [...result, mapDMMFToParsedField(field, overrides)];
   }, [] as ParsedField[]);
 
-  if (apiExtraModels.length || hasEnum) {
+  if (apiExtraModels.length || hasApiProperty) {
     const destruct = [];
     if (apiExtraModels.length) destruct.push('ApiExtraModels');
-    if (hasEnum) destruct.push('ApiProperty');
+    if (hasApiProperty) destruct.push('ApiProperty');
     imports.unshift({ from: '@nestjs/swagger', destruct });
   }
 
   const importPrismaClient = makeImportsFromPrismaClient(fields);
   if (importPrismaClient) imports.unshift(importPrismaClient);
 
+  console.log(fields);
   return {
     model,
     fields,
